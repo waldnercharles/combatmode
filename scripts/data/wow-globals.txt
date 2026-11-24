@@ -41,8 +41,12 @@ C_CVar.GetCVar
 C_CVar.GetCVarDefault
 C_CVar.GetCVarInfo
 C_CVar.SetCVar
+C_GamePad
+C_GamePad.IsEnabled
 C_HouseEditor
 C_HouseEditor.IsHouseEditorActive
+C_InputInterfaceStyle
+C_InputInterfaceStyle.GetCurrentStyle
 C_Item
 C_Item.GetItemCooldown
 C_Item.GetItemCount
@@ -182,6 +186,7 @@ IsMounted
 IsMouseButtonDown
 issecretvalue
 IsShiftKeyDown
+IsUsingGamepad
 ITEM_QUALITY_COLORS
 LoadAddOn
 loadstring
@@ -244,7 +249,6 @@ ToggleSheath
 tonumber
 tostring
 type
-UIErrorsFrame
 UIParent
 UISpecialFrames
 UnitAffectingCombat

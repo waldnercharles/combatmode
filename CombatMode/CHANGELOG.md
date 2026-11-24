@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Mouse Look** no longer fights a controller for the camera. While you play with a controller, Action Combat Mode steps aside, and Mouse Look comes back as soon as you touch the mouse or keyboard again.
 - Your edits in the **Prelines Editor** now apply to harmful spells on click-cast buttons and bar keys while the **Ally Cycle** keys are bound. Before, the built-in preline was used instead. A long preline that would push the macro past the 255-character limit now drops the restore-after-harm retarget line instead of cutting it in half.
 - Friendly pet and minion nameplates, which the **Cycle Lock** keys skip, are now hidden when **Cycle NPCs and Pets** is off, in and out of **Support Mode**. Turning the option on restores your own setting.
 - Keys and click-cast buttons on a bar slot that holds a macro on another stance, form or stealth bar no longer stop working after you swap bars in combat (a rogue leaving stealth with an opener, a warrior changing stance). Before, the slot did nothing until combat ended. Such a slot now uses the game's own binding, so its spell skips **Reticle Targeting**.

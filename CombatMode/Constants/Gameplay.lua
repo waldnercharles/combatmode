@@ -143,6 +143,7 @@ CM.Constants.BLIZZARD_EVENTS = {
   -- Events that run the free-look check right away instead of waiting for the next tick
   FREELOOK_RECONCILE_EVENTS = {
     "CURRENT_SPELL_CAST_CHANGED", -- Ground spell (green circle) started / placed / cancelled
+    "GAME_PAD_ACTIVE_CHANGED", -- Controller picked up / put down: hand the camera over at once
   },
   -- Events that fire Rematch()
   REMATCH_EVENTS = {

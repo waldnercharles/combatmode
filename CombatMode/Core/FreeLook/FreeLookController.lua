@@ -5,7 +5,8 @@
 --  ShouldFreeLookBeOff aggregation, cursor centering without the 10.2 jolt (centering 1 +
 --  speed dip → Start → Stop → centering 0 → Start), tooltip hide while locked
 --  (Show Tooltips With key peeks it beside the crosshair), optional sheath-with-mouselook (intentional toggle only), and the OPie rematch
---  latch (NotifyOpieUnlockFrameVisible / RematchFreeLookAfterOpieIfNeeded).
+--  latch (NotifyOpieUnlockFrameVisible / RematchFreeLookAfterOpieIfNeeded). Controller
+--  handoff: no Mouse Look while a game pad is in use (CM.IsGamepadInputActive).
 --  Architecture / how it works:
 --    • LockFreeLook / UnlockFreeLook drive MouselookStart/Stop + crosshair display +
 --      centering helpers via CVarManager.
@@ -29,10 +30,8 @@
 --      is dropped when force lock wins, and the tap poll never clears chrome or sheathes
 --      while Mouse Look is actually on.
 --    • Sheathing with Mouse Look and the OPie rematch: see .claude/rules/domain-freelook-camera.md (FreeLookController.lua notes).
---    • Mouse Look camera chrome (shoulder + vignette): active while locked and through
---      temp unlock; cleared only on permanent unlock via IsMouseLookCameraChromeActive.
---      Shoulder tweens with Vignette over MouseLookCameraFadeDuration. Dynamic Pitch is
---      sticky (SetDynamicPitch).
+--    • Mouse Look camera chrome (shoulder + vignette): on while locked and through temp unlock,
+--      cleared only on permanent unlock (IsMouseLookCameraChromeActive); Dynamic Pitch is sticky.
 --  Does not: Own frame-watch lists/predicates (AutoCursorUnlock) or CVar preset tables.
 --  Related: Core/FreeLook/AutoCursorUnlock.lua, Core/Runtime/CVarManager.lua,
 --  Core/Runtime/Runtime.lua, Core/Crosshair/Animations.lua, Core/Crosshair/Crosshair.lua,
@@ -42,7 +41,10 @@ local _, CM = ...
 local _G = _G
 
 -- WoW API
+local C_GamePad = _G.C_GamePad
+local C_InputInterfaceStyle = _G.C_InputInterfaceStyle
 local C_Timer = _G.C_Timer
+local Enum = _G.Enum
 local GameTooltip = _G.GameTooltip
 local GetBindingKey = _G.GetBindingKey
 local GetSheathState = _G.GetSheathState
@@ -57,6 +59,7 @@ local IsKeyDown = _G.IsKeyDown
 local IsMouseButtonDown = _G.IsMouseButtonDown
 local IsMouselooking = _G.IsMouselooking
 local IsShiftKeyDown = _G.IsShiftKeyDown
+local IsUsingGamepad = _G.IsUsingGamepad
 local MouselookStart = _G.MouselookStart
 local MouselookStop = _G.MouselookStop
 local PlaySound = _G.PlaySound
@@ -216,6 +219,46 @@ local function IsGroundTargeting()
   return SpellIsTargeting() or IsPetGroundTargeting()
 end
 
+-- Controller handoff. A game pad drives the camera through its own sticks; Mouse Look on top
+-- of that takes the camera (and the cursor the pad's UI needs) away from it, and the tick
+-- re-locks it every 0.15 s. So while the pad is the active input, Combat Mode's own Mouse Look
+-- stands down, and it comes back once the mouse or keyboard is used again.
+--   • Forever (Controller Support): C_InputInterfaceStyle reports the UI style, Gamepad while
+--     the controller UI is up (INPUT_DEVICE_INTERFACE_TRANSITION, Forever only).
+--   • Every client: IsUsingGamepad() is true while the pad is the last device used; the
+--     GAME_PAD_ACTIVE_CHANGED payload (on every client, unlike IsUsingGamepad) is the fallback.
+local gamepadActiveFromEvent = false
+
+local function IsGamepadInterfaceStyle()
+  if not (C_InputInterfaceStyle and C_InputInterfaceStyle.GetCurrentStyle) then
+    return false
+  end
+  local styles = Enum and Enum.InputDeviceInterfaceType
+  if not (styles and styles.Gamepad) then
+    return false
+  end
+  return C_InputInterfaceStyle.GetCurrentStyle() == styles.Gamepad
+end
+
+--- True while a game pad is the input in use, so Combat Mode leaves the camera to it.
+function CM.IsGamepadInputActive()
+  if C_GamePad and C_GamePad.IsEnabled and not C_GamePad.IsEnabled() then
+    return false
+  end
+  if IsGamepadInterfaceStyle() then
+    return true
+  end
+  if IsUsingGamepad then
+    return IsUsingGamepad() == true
+  end
+  return gamepadActiveFromEvent
+end
+
+--- GAME_PAD_ACTIVE_CHANGED(isActive): remember the payload for clients without IsUsingGamepad.
+function CM.OnGamepadActiveChanged(isActive)
+  gamepadActiveFromEvent = isActive == true
+end
+
 -- Temporary gameplay unlocks keep weapons drawn; Auto Cursor Unlock / etc. may sheath.
 local function ShouldKeepWeaponsDrawnOnTempUnlock()
   if FreeLookOverride then
@@ -229,6 +272,10 @@ local function ShouldKeepWeaponsDrawnOnTempUnlock()
   end
   -- Set by AutoCursorUnlock while an OPie ring is visible (before UnlockFreeLook).
   if opieUnlockSeen then
+    return true
+  end
+  -- Picking up the controller is not putting the weapons away.
+  if CM.IsGamepadInputActive() then
     return true
   end
   return false
@@ -649,7 +696,8 @@ local function PlayFreeLookSound()
 end
 
 function CM.LockFreeLook()
-  if IsMouselooking() then
+  -- The controller owns the camera while it is the active input (see IsGamepadInputActive).
+  if IsMouselooking() or CM.IsGamepadInputActive() then
     return
   end
   StartFreeLookFresh()
@@ -670,7 +718,7 @@ function CM.UnlockFreeLook()
   MouselookStop()
   PlayFreeLookSound()
 
-  if CM.DB.global.pulseCursor then
+  if CM.DB.global.pulseCursor and not CM.IsGamepadInputActive() then
     CM.ShowCursorPulse()
   end
 

@@ -628,7 +628,11 @@ local function Rematch()
 
   -- Early OnUpdate can start mouselook before Rematch; CursorFreelookCentering only
   -- hides the cursor across a fresh start (force 0 → Start → deferred 1). Bounce so
-  -- LockFreeLook is not a no-op when already looking.
+  -- LockFreeLook is not a no-op when already looking. With a game pad in use the bounce is
+  -- skipped (LockFreeLook would not start again); the tick locks once mouse / keyboard is back.
+  if CM.IsGamepadInputActive() then
+    return
+  end
   if IsMouselooking() then
     MouselookStop()
   end
@@ -654,6 +658,15 @@ local TIME_SINCE_LAST_UPDATE = 0
 --- Returns true when the caller may go on to the crosshair updates.
 function CM.ReconcileFreeLook()
   if CM.IsDefaultMouseActionBeingUsed() then
+    return false
+  end
+
+  -- A game pad in use owns the camera: drop only Combat Mode's own Mouse Look (never stop one
+  -- the client or another addon started) and skip the lock until mouse / keyboard is back.
+  if CM.IsGamepadInputActive() then
+    if CM.IsMouselooking() then
+      CM.UnlockFreeLook()
+    end
     return false
   end
 
