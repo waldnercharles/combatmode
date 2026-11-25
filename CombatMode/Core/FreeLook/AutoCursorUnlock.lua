@@ -13,7 +13,8 @@
 --      Menu.GetManager():IsAnyMenuOpen() (same frameWatching gate).
 --    • InitializeWildcardFrameTracking — hooks/create listeners for dynamic names.
 --    • IsVendorMountOut / IsInPetBattle / IsFeignDeathActive / IsCustomConditionTrue
---      / IsCustomLockConditionTrue (DB.global.customLockCondition).
+--      / IsCustomLockConditionTrue (DB.global.customLockCondition) /
+--      IsControllerForeverPointerActive (that addon's pointer hand-off frees the cursor).
 --    • OPie path may free centering + hide crosshair via FreeLook helpers.
 --    • CloseUnlockWindows — closes those same windows, in combat only the unprotected ones (Close Windows
 --      option, called by the Mouse Look key).
@@ -227,6 +228,16 @@ end
 
 function CM.IsInPetBattle()
   return IsInBattle ~= nil and IsInBattle() == true
+end
+
+--- ControllerForever's pointer hand-off (a trackpad / mouse click, or its "Mouse pointer" bind):
+--- it stops mouselook every frame to free the pointer, so Combat Mode must not hold a lock then.
+--- Read from its own state table (ControllerForever.Menu.pointer.active); false without it.
+function CM.IsControllerForeverPointerActive()
+  local cf = _G.ControllerForever
+  local menu = type(cf) == "table" and cf.Menu
+  local pointer = type(menu) == "table" and menu.pointer
+  return type(pointer) == "table" and pointer.active == true
 end
 
 function CM.InitializeWildcardFrameTracking(frameArr)

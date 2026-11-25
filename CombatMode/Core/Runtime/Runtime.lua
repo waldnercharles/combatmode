@@ -245,7 +245,7 @@ function CM.MacroExists(name)
 end
 
 --[[
-  Checking if DynamicCam or SteadyCam are loaded so we can relinquish camera controls.
+  Checking if DynamicCam, SteadyCam or ControllerForever are loaded so we can relinquish camera controls.
   Autofocus Locked Target stays with Combat Mode. When shoulderFollowsMouseLook is on,
   permanent unlock still eases shoulder to 0 (then restores on re-lock).
 ]]
@@ -253,8 +253,14 @@ end
 local function IsCamAddonLoaded()
   CM.SteadyCam = IsAddOnLoaded("SteadyCam")
   CM.DynamicCam = IsAddOnLoaded("DynamicCam")
+  -- ControllerForever runs its own camera views (shoulder, dynamic pitch, keep-centered) and
+  -- puts them back on every mouse / controller swap, so it owns the camera like SteadyCam.
+  CM.ControllerForever = IsAddOnLoaded("ControllerForever")
 
-  CM.CameraOwner = CM.SteadyCam and "SteadyCam" or CM.DynamicCam and "DynamicCam" or nil
+  CM.CameraOwner = CM.SteadyCam and "SteadyCam"
+    or CM.DynamicCam and "DynamicCam"
+    or CM.ControllerForever and "ControllerForever"
+    or nil
 
   if CM.CameraOwner and not CM.DB.global.silenceAlerts then
     print(
@@ -628,8 +634,9 @@ local function Rematch()
 
   -- Early OnUpdate can start mouselook before Rematch; CursorFreelookCentering only
   -- hides the cursor across a fresh start (force 0 → Start → deferred 1). Bounce so
-  -- LockFreeLook is not a no-op when already looking.
-  if IsMouselooking() then
+  -- LockFreeLook is not a no-op when already looking. With a game pad in use LockFreeLook makes
+  -- it Controller Look instead (no cursor centering to apply).
+  if IsMouselooking() and not CM.IsGamepadInputActive() then
     MouselookStop()
   end
   CM.LockFreeLook()
@@ -657,19 +664,17 @@ function CM.ReconcileFreeLook()
     return false
   end
 
-  local isMouselooking = IsMouselooking()
-
   if CM.ShouldFreeLookBeOff() then
     CM.UnlockFreeLook()
     return false
   end
 
   -- OPie may rematch mouselook itself after freeing CursorFreelookCentering; a plain
-  -- LockFreeLook no-ops when already looking and leaves the cursor visible.
+  -- LockFreeLook no-ops when already looking and leaves the cursor visible. Otherwise
+  -- LockFreeLook (a no-op while locked) also swaps Mouse Look and Controller Look when the
+  -- player moves between the game pad and the mouse / keyboard.
   if not (CM.RematchFreeLookAfterOpieIfNeeded and CM.RematchFreeLookAfterOpieIfNeeded()) then
-    if not isMouselooking then
-      CM.LockFreeLook()
-    end
+    CM.LockFreeLook()
   end
   return true
 end

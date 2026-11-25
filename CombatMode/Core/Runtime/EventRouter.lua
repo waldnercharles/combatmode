@@ -7,8 +7,8 @@
 --  crosshair cast feedback, Assisted Highlight cast hooks, and Ally Cycle roster/bindings.
 --  Architecture / how it works:
 --    • BuildEventCategoryMap / GetEventCategoryMap used at enable time.
---    • FREELOOK_RECONCILE_EVENTS (CURRENT_SPELL_CAST_CHANGED) → CM.ReconcileFreeLook, the same
---      check the tick runs, so ground-spell placement frees / re-locks the cursor immediately.
+--    • FREELOOK_RECONCILE_EVENTS (CURRENT_SPELL_CAST_CHANGED, GAME_PAD_ACTIVE_CHANGED) →
+--      CM.ReconcileFreeLook, the tick's check, so ground spells and controller handoff act now.
 --    • REFRESH_BINDINGS_EVENTS coalesced via C_Timer so one RefreshClickCastMacros runs
 --      after bursts (also Toggle Focus + Ally Cycle side effects). Self-echo events
 --      (UPDATE_BINDINGS / ACTIONBAR_SLOT_CHANGED only) during apply are suppressed; Assisted
@@ -183,6 +183,9 @@ local function HandleEventByCategory(category, event, ...)
       CM.LockFreeLook()
     end,
     FREELOOK_RECONCILE_EVENTS = function()
+      if event == "GAME_PAD_ACTIVE_CHANGED" and CM.OnGamepadActiveChanged then
+        CM.OnGamepadActiveChanged(cvarName) -- first payload = isActive
+      end
       if CM.ReconcileFreeLook then
         CM.ReconcileFreeLook()
       end

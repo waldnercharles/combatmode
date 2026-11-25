@@ -13,6 +13,9 @@
 --    • ActionSlotToBindingName uses CM.Constants.ClickCastBars actionBase ranges
 --      (incl. MultiBar5–7 slots 145–180).
 --    • CM.InvalidateAssistedHighlightKeybindCache clears slot maps (EventRouter bars).
+--    • Controller: pad keys (PAD1, SHIFT-PADRSHOULDER...) format as the connected pad's button
+--      glyphs (GetGamepadGlyphMarkup, Forever's InputIconTextureSetUtility; text elsewhere);
+--      while the pad is in use a spell on Forever's controller bars shows its button chord.
 --  Does not: Own IconMask chrome, ProcLoop/fade, cast swipe/press/break (sibling modules).
 --  Related: Core/Crosshair/AssistedHighlight/Assist.lua, Core/Runtime/EventRouter.lua,
 --  Core/ClickCasting/BindingOverrides.lua, Constants/Assets.lua
@@ -22,12 +25,17 @@ local _G = _G
 
 -- WoW API
 local C_ActionBar = _G.C_ActionBar
+local C_GamepadUI = _G.C_GamepadUI
+local C_Texture = _G.C_Texture
 
 -- Lua stdlib
 local math = _G.math
 local ipairs = _G.ipairs
 local pairs = _G.pairs
 local pcall = _G.pcall
+local select = _G.select
+local string = _G.string
+local table = _G.table
 local tonumber = _G.tonumber
 local type = _G.type
 
@@ -119,8 +127,93 @@ local function AbbreviateKey(key)
   return key
 end
 
+-- Controller button glyphs. Forever's Controller Support ships the button prompt art for each
+-- device family (Xbox letters, PlayStation shapes, Switch) and picks the set from the connected
+-- pad's label style; InputIconTextureSetUtility (Forever only) hands out the atlas for a binding
+-- key part (PAD1, PADLTRIGGER, SHIFT = left trigger...). These are client art that must follow
+-- the device, so they are drawn by name and never shipped; any part the client can't draw drops
+-- the whole key back to text.
+local GLYPH_SIZE = 22
+
+local function IsGamepadKeyPart(part)
+  return string.find(part, "^PAD") ~= nil or part == "DIRPAD"
+end
+
+local function GamepadAtlasForKeyPart(part)
+  local util = _G.InputIconTextureSetUtility
+  if not (util and util.GetNormalActiveInputIconButtonTexture) then
+    return nil
+  end
+  local name = part
+  if util.GetInputIconNameFromBindingKey then
+    local ok, names = pcall(util.GetInputIconNameFromBindingKey, part)
+    if ok and type(names) == "table" and type(names[1]) == "string" then
+      name = names[1]
+    end
+  end
+  -- Indexes the device set's table for the key, which errors for keys it has no art for.
+  local ok, atlas = pcall(util.GetNormalActiveInputIconButtonTexture, name)
+  if not ok or type(atlas) ~= "string" or atlas == "" then
+    return nil
+  end
+  if C_Texture and C_Texture.GetAtlasInfo and not C_Texture.GetAtlasInfo(atlas) then
+    return nil
+  end
+  return atlas
+end
+
+--- Inline glyph markup for a binding key that uses a game pad button ("PAD1",
+--- "SHIFT-PADRSHOULDER"...), or nil for keyboard / mouse keys and when the client has no art.
+function Keybinds.GetGamepadGlyphMarkup(bindingKey)
+  if type(bindingKey) ~= "string" or bindingKey == "" then
+    return nil
+  end
+  local parts = {}
+  local anyPad = false
+  for part in string.gmatch(bindingKey:upper(), "[^%-]+") do
+    parts[#parts + 1] = part
+    anyPad = anyPad or IsGamepadKeyPart(part)
+  end
+  if not anyPad then
+    return nil
+  end
+  local markup = {}
+  for i, part in ipairs(parts) do
+    local atlas = GamepadAtlasForKeyPart(part)
+    if not atlas then
+      return nil
+    end
+    markup[i] = "|A:" .. atlas .. ":" .. GLYPH_SIZE .. ":" .. GLYPH_SIZE .. "|a"
+  end
+  return table.concat(markup)
+end
+
 function Keybinds.FormatKeybindText(bindingKey)
+  local glyph = Keybinds.GetGamepadGlyphMarkup(bindingKey)
+  if glyph then
+    return glyph
+  end
   return AbbreviateKey(bindingKey) or bindingKey
+end
+
+--- First of GetBindingKey's keys, preferring a game pad key while the pad is in use (a command
+--- bound to both a key and a pad button shows the one the player is holding).
+function Keybinds.PickBindingKey(...)
+  local first = ...
+  if not (CM.IsGamepadInputActive and CM.IsGamepadInputActive()) then
+    return first
+  end
+  for i = 1, select("#", ...) do
+    local key = select(i, ...)
+    if type(key) == "string" then
+      for part in string.gmatch(key:upper(), "[^%-]+") do
+        if IsGamepadKeyPart(part) then
+          return key
+        end
+      end
+    end
+  end
+  return first
 end
 
 -- The mouse art is the shipped 52x69 Blizzard atlas (Assets/atlas). |T file:height:width|t must
@@ -394,7 +487,98 @@ local function GetBindingCommandForActionSlot(slot)
   return ActionSlotToBindingName(actionSlot)
 end
 
+-- Forever's controller action bars (Controller Support UI) keep their actions in storage slots
+-- past the normal bars: per page 4 bars x 8 buttons, minus 4 reserved UI buttons on the top bar
+-- (page-unit slots 5-8), 3 standard pages (GamepadActionBarBindingUtil in
+-- Blizzard_GamepadActionBars). A bar's 8 buttons are GAMEPADACTIONBUTTON1-8 (d-pad left / up /
+-- right / down, then face left / top / right / bottom); the top bar needs no modifier, the left
+-- bar the left crossbar modifier, the right bar the right one, the bottom bar both.
+local GAMEPAD_BUTTON_DEFAULT_KEYS = {
+  "PADDLEFT",
+  "PADDUP",
+  "PADDRIGHT",
+  "PADDDOWN",
+  "PAD3",
+  "PAD4",
+  "PAD2",
+  "PAD1",
+}
+local GAMEPAD_FIRST_RESERVED_PAGE_SLOT = 5
+
+local function GamepadBindingKey(command, fallback)
+  local key = _G.GetBindingKey and _G.GetBindingKey(command, 1)
+  if type(key) == "string" and key ~= "" then
+    return key
+  end
+  return fallback
+end
+
+--- Storage slot → (binding key chord, page) on the controller action bars, or nil.
+local function GamepadBarKeyForSlot(slot)
+  local consts = _G.Constants and _G.Constants.GamepadActionBarConstants
+  if not (consts and C_GamepadUI and C_GamepadUI.GetFirstGamepadActionStorageSlotIndex) then
+    return nil
+  end
+  local slotsPerBar = consts.NUM_SLOTS_PER_GAMEPAD_ACTION_BAR or 8
+  local reserved = consts.NUM_RESERVED_SLOTS_PER_GAMEPAD_ACTION_BAR_PAGE_UNIT or 4
+  local perPageUnit = consts.NUM_PAGEABLE_SLOTS_PER_GAMEPAD_ACTION_BAR_PAGE_UNIT_STANDARD_PAGE or 32
+  local pages = consts.NUM_STANDARD_PAGES_PER_GAMEPAD_ACTION_BAR_PAGE_UNIT or 3
+  local perPage = perPageUnit - reserved
+  local offset = slot - C_GamepadUI.GetFirstGamepadActionStorageSlotIndex()
+  if offset < 0 or offset >= perPage * pages then
+    return nil
+  end
+  local page = math.floor(offset / perPage) + 1
+  local pageSlot = (offset % perPage) + 1
+  if pageSlot >= GAMEPAD_FIRST_RESERVED_PAGE_SLOT then
+    pageSlot = pageSlot + reserved
+  end
+  local bar = math.floor((pageSlot - 1) / slotsPerBar) + 1
+  local button = ((pageSlot - 1) % slotsPerBar) + 1
+  local key =
+    GamepadBindingKey("GAMEPADACTIONBUTTON" .. button, GAMEPAD_BUTTON_DEFAULT_KEYS[button])
+  if not key then
+    return nil
+  end
+  local leftMod = (bar == 2 or bar == 4) and GamepadBindingKey("GAMEPADLEFTMOD", "PADLTRIGGER")
+  local rightMod = (bar == 3 or bar == 4) and GamepadBindingKey("GAMEPADRIGHTMOD", "PADRTRIGGER")
+  if leftMod and rightMod then
+    return leftMod .. "-" .. rightMod .. "-" .. key, page
+  elseif leftMod or rightMod then
+    return (leftMod or rightMod) .. "-" .. key, page
+  end
+  return key, page
+end
+
+--- The spell's button on the controller action bars (lowest page first), as a key chord.
+local function GetGamepadBarKeyForSpell(spellID)
+  if not (spellID and C_ActionBar and C_ActionBar.FindSpellActionButtons) then
+    return nil
+  end
+  local ok, slots = pcall(C_ActionBar.FindSpellActionButtons, spellID)
+  if not ok or type(slots) ~= "table" then
+    return nil
+  end
+  local bestKey, bestPage
+  for _, value in pairs(slots) do
+    local slot = tonumber(value)
+    if slot then
+      local key, page = GamepadBarKeyForSlot(slot)
+      if key and (not bestPage or page < bestPage) then
+        bestKey, bestPage = key, page
+      end
+    end
+  end
+  return bestKey
+end
+
 function Keybinds.GetFirstBindingKeyForSpell(spellID)
+  if CM.IsGamepadInputActive and CM.IsGamepadInputActive() then
+    local padKey = GetGamepadBarKeyForSpell(spellID)
+    if padKey then
+      return padKey
+    end
+  end
   local slot = GetFirstActionSlotForSpell(spellID)
   if not slot then
     return nil
@@ -404,7 +588,7 @@ function Keybinds.GetFirstBindingKeyForSpell(spellID)
     return nil
   end
   local key1, key2 = _G.GetBindingKey(command)
-  return key1 or key2
+  return Keybinds.PickBindingKey(key1, key2) or key2
 end
 
 -- Cream title color of the options panel (UI.Colors.text, #F1E6D3) for the interactable name.

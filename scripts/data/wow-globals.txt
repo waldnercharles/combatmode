@@ -41,8 +41,14 @@ C_CVar.GetCVar
 C_CVar.GetCVarDefault
 C_CVar.GetCVarInfo
 C_CVar.SetCVar
+C_GamePad
+C_GamePad.IsEnabled
+C_GamepadUI
+C_GamepadUI.GetFirstGamepadActionStorageSlotIndex
 C_HouseEditor
 C_HouseEditor.IsHouseEditorActive
+C_InputInterfaceStyle
+C_InputInterfaceStyle.GetCurrentStyle
 C_Item
 C_Item.GetItemCooldown
 C_Item.GetItemCount
@@ -87,6 +93,8 @@ C_SpellBook.GetSpellBookItemInfo
 C_SpellBook.GetSpellBookSkillLineInfo
 C_SpellBook.HasPetSpells
 C_SpellBook.IsSpellBookItemPassive
+C_Texture
+C_Texture.GetAtlasInfo
 C_Timer
 C_Timer.After
 C_Timer.NewTicker
@@ -130,6 +138,7 @@ GameFontNormal
 GameFontNormalLarge
 GameFontNormalSmall
 GameMenuFrame
+GamepadReticle
 GameTooltip
 GameTooltip_SetDefaultAnchor
 GetActionBarPage
@@ -167,6 +176,7 @@ HideUIPanel
 hooksecurefunc
 InCinematic
 InCombatLockdown
+InputIconTextureSetUtility
 ipairs
 IsAddOnLoaded
 IsAltKeyDown
@@ -182,6 +192,7 @@ IsMounted
 IsMouseButtonDown
 issecretvalue
 IsShiftKeyDown
+IsUsingGamepad
 ITEM_QUALITY_COLORS
 LoadAddOn
 loadstring
@@ -244,7 +255,6 @@ ToggleSheath
 tonumber
 tostring
 type
-UIErrorsFrame
 UIParent
 UISpecialFrames
 UnitAffectingCombat

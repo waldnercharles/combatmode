@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Controller support.** Pick up a controller and Action Combat Mode hands it the camera instead of fighting it, while your crosshair, **Combat Assist HUD**, **Target Lock** marker and vignette stay on. Touch the mouse or keyboard and Mouse Look comes straight back.
+  - Keybind badges show your controller's own button icons (Xbox, PlayStation or Switch), including the button combo for spells on the controller action bars.
 - **Support Mode** has a new **Self-Cast Keybind**. Hold it and the helpful spells on your click-cast buttons land on you, without changing your target or **Target Lock**.
 - **Support Mode** has a new **Cycle in Group Order** option. Turn it on and the **Cycle Lock** keys move through your party or raid in group order, instead of jumping to the nearest player. With nobody locked, **Next** locks the first member of your group and **Previous** the last.
 

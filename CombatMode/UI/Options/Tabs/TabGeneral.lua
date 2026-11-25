@@ -413,8 +413,8 @@ UI.Options.AddTab({
       desc = L["Shoulder Offset eases to 0 when disabling Mouse Look."]
         .. "\n"
         .. L["When off, Shoulder Offset stays constant at all times."],
-      -- Still editable with DynamicCam (unlock→0 / restore path); SteadyCam and MS
-      -- Protection lock it.
+      -- Still editable with DynamicCam (unlock→0 / restore path); SteadyCam, ControllerForever
+      -- (no shoulder writes at all) and MS Protection lock it.
       watermarkWhenDisabled = function()
         if RespectMotionSicknessOn() then
           return L["Disabled while Motion Sickness Protection is on"]
@@ -431,7 +431,7 @@ UI.Options.AddTab({
         end
       end,
       disabled = function()
-        return CM.SteadyCam or RespectMotionSicknessOn()
+        return CM.SteadyCam or CM.ControllerForever or RespectMotionSicknessOn()
       end,
     })
     ctx:Keybind({

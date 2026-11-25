@@ -378,6 +378,17 @@ local function SetCrosshairAppearance(state)
   )
 end
 
+-- Forever's Controller Support draws its own small reticle (GamepadReticle, a plain frame) at the
+-- same screen centre. While ours is up it is faded out instead of hidden (Blizzard shows it on
+-- every switch to the controller UI), and given back the moment ours goes.
+local function SyncBlizzardGamepadReticle(ourReticleShown)
+  local reticle = _G.GamepadReticle
+  if not (reticle and reticle.SetAlpha) then
+    return
+  end
+  reticle:SetAlpha(ourReticleShown and 0 or 1)
+end
+
 function CM.DisplayCrosshair(shouldShow)
   -- While previewing, ignore hide requests from the free-look/unlock paths so tweaking
   -- options with the cursor free still shows the reticle.
@@ -400,6 +411,7 @@ function CM.DisplayCrosshair(shouldShow)
     end
     CrosshairTexture:Hide()
   end
+  SyncBlizzardGamepadReticle(shouldShow and CM.IsCrosshairEnabled())
   -- Keep assisted highlight in sync even when Runtime returns early (e.g. cursor mode / UI panels).
   if CM.UpdateCrosshairAssistedHighlight then
     CM.UpdateCrosshairAssistedHighlight()
@@ -736,4 +748,5 @@ end
 
 function CM.HideCrosshairFrame()
   CrosshairFrame:Hide()
+  SyncBlizzardGamepadReticle(false)
 end
