@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Controller support.** Pick up a controller and Action Combat Mode hands it the camera instead of fighting it, while your crosshair, **Combat Assist HUD**, **Target Lock** marker and vignette stay on. Touch the mouse or keyboard and Mouse Look comes straight back.
+  - Keybind badges show your controller's own button icons (Xbox, PlayStation or Switch), including the button combo for spells on the controller action bars.
 - **Support Mode** has a new **Self-Cast Keybind**. Hold it and the helpful spells on your click-cast buttons land on you, without changing your target or **Target Lock**.
 - **Support Mode** has a new **Cycle in Group Order** option. Turn it on and the **Cycle Lock** keys move through your party or raid in group order, instead of jumping to the nearest player. With nobody locked, **Next** locks the first member of your group and **Previous** the last.
 
@@ -18,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Mouse Look** no longer fights a controller for the camera. While you play with a controller, Action Combat Mode steps aside, and Mouse Look comes back as soon as you touch the mouse or keyboard again.
 - Your edits in the **Prelines Editor** now apply to harmful spells on click-cast buttons and bar keys while the **Ally Cycle** keys are bound. Before, the built-in preline was used instead. A long preline that would push the macro past the 255-character limit now drops the restore-after-harm retarget line instead of cutting it in half.
 - Friendly pet and minion nameplates, which the **Cycle Lock** keys skip, are now hidden when **Cycle NPCs and Pets** is off, in and out of **Support Mode**. Turning the option on restores your own setting.
 - Keys and click-cast buttons on a bar slot that holds a macro on another stance, form or stealth bar no longer stop working after you swap bars in combat (a rogue leaving stealth with an opener, a warrior changing stance). Before, the slot did nothing until combat ended. Such a slot now uses the game's own binding, so its spell skips **Reticle Targeting**.

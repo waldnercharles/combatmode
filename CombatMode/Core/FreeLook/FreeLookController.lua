@@ -76,6 +76,9 @@ local string = _G.string
 
 -- INITIAL STATE VARIABLES
 local cmMouselookActive = false -- Tracks Combat Mode's own intentional mouselook. Used in conjunction with _G.IsMouselooking() to handle external mouselook properly.
+-- Controller Look: locked while a game pad is in use. The pad drives the camera, so there is no
+-- MouselookStart; the crosshair, HUDs and camera chrome run exactly as in Mouse Look.
+local padLookActive = false
 -- Shoulder + vignette stay up through temp (hold) unlock; cleared only on permanent unlock.
 local mouseLookCameraChromeActive = false
 local FreeLookOverride = false -- Changes when Free Look state is modified through user input ("Toggle / Hold" keybind and "/acm" cmd)
@@ -92,6 +95,18 @@ local MOUSE_LOOK_BINDING = "Combat Mode - Mouse Look"
 local CURSOR_MODE_HOLD_THRESHOLD = 0.3
 local CURSOR_MODE_SPURIOUS_KEY_UP = 0.05
 local CURSOR_MODE_SHEATH_POLL = 0.05
+
+--- Locked in either form: Controller Look, or Mouse Look. With a game pad in use only Combat
+--- Mode's own mouselook counts, so a camera the client or another addon holds is never "ours".
+local function IsFreeLookLocked()
+  if padLookActive then
+    return true
+  end
+  if cmMouselookActive and IsMouselooking() then
+    return true
+  end
+  return not CM.IsGamepadInputActive() and IsMouselooking()
+end
 -- Delay sheath-on so quick Mouse Look re-entry (e.g. pull → click → lock) does not flash.
 local SHEATH_DEBOUNCE_SEC = 1.5
 local MOUSE_BINDING_BUTTON = {
@@ -143,7 +158,7 @@ local function ApplyWeaponsSheathed(wantSheathed)
   end
   C_Timer.After(SHEATH_DEBOUNCE_SEC, function()
     -- Mouse Look came back during the delay (e.g. force lock): never sheath while looking.
-    if token ~= pendingSheathToken or IsMouselooking() then
+    if token ~= pendingSheathToken or IsFreeLookLocked() then
       return
     end
     ApplyWeaponsSheathedNow(true)
@@ -219,10 +234,11 @@ local function IsGroundTargeting()
   return SpellIsTargeting() or IsPetGroundTargeting()
 end
 
--- Controller handoff. A game pad drives the camera through its own sticks; Mouse Look on top
--- of that takes the camera (and the cursor the pad's UI needs) away from it, and the tick
--- re-locks it every 0.15 s. So while the pad is the active input, Combat Mode's own Mouse Look
--- stands down, and it comes back once the mouse or keyboard is used again.
+-- Controller Look. A game pad drives the camera with its own sticks, and Mouse Look on top of
+-- that takes the camera (and the cursor the pad's UI needs) away from it. So while the pad is the
+-- input in use, a lock is Controller Look instead (padLookActive): no MouselookStart, but the
+-- crosshair, HUDs, tooltip hiding and camera chrome all run as usual (CM.IsMouselooking is
+-- true). Touching the mouse or keyboard swaps it back to Mouse Look on the next tick.
 --   • Forever (Controller Support): C_InputInterfaceStyle reports the UI style, Gamepad while
 --     the controller UI is up (INPUT_DEVICE_INTERFACE_TRANSITION, Forever only).
 --   • Every client: IsUsingGamepad() is true while the pad is the last device used; the
@@ -240,7 +256,7 @@ local function IsGamepadInterfaceStyle()
   return C_InputInterfaceStyle.GetCurrentStyle() == styles.Gamepad
 end
 
---- True while a game pad is the input in use, so Combat Mode leaves the camera to it.
+--- True while a game pad is the input in use: locks are Controller Look, not Mouse Look.
 function CM.IsGamepadInputActive()
   if C_GamePad and C_GamePad.IsEnabled and not C_GamePad.IsEnabled() then
     return false
@@ -272,10 +288,6 @@ local function ShouldKeepWeaponsDrawnOnTempUnlock()
   end
   -- Set by AutoCursorUnlock while an OPie ring is visible (before UnlockFreeLook).
   if opieUnlockSeen then
-    return true
-  end
-  -- Picking up the controller is not putting the weapons away.
-  if CM.IsGamepadInputActive() then
     return true
   end
   return false
@@ -359,7 +371,7 @@ local function ScheduleTapSheathPoll()
 
     -- Tap confirmed: stay unlocked and drop shoulder/vignette chrome.
     pendingTapSheath = false
-    if IsMouselooking() then
+    if IsFreeLookLocked() then
       -- Force lock relocked before the tap resolved: this was not a permanent unlock.
       return
     end
@@ -664,7 +676,7 @@ local function RestoreCameraSpeedAfterDip()
   CM.EndCameraSpeedDip()
 end
 
-local function StartFreeLookFresh()
+local function StartFreeLookFresh(skipLockIn)
   if CM.IsCrosshairEnabled() and CM.BeginCameraSpeedDip(CENTERING_DIP_SPEED) then
     if not cameraSpeedRestoreScheduled then
       cameraSpeedRestoreScheduled = true
@@ -678,8 +690,39 @@ local function StartFreeLookFresh()
   MouselookStart()
   cmMouselookActive = true
   RunLockFreeLookDeferredUI()
-  CM.ShowCrosshairLockIn()
+  if not skipLockIn then
+    CM.ShowCrosshairLockIn()
+  end
   CM.DebugPrint("Free Look Enabled")
+end
+
+-- Controller Look on: the same UI as a Mouse Look lock, minus MouselookStart and the cursor
+-- centering bounce (the pad has no cursor to centre). From Mouse Look (the pad was picked up
+-- while locked) only the mouselook itself stops; the crosshair and HUDs stay up untouched.
+-- Returns true when it was a swap, so the caller skips the lock sound / sheath.
+local function StartControllerLook()
+  local swapping = cmMouselookActive and IsMouselooking()
+  if swapping then
+    cmMouselookActive = false
+    MouselookStop()
+  end
+  padLookActive = true
+  if swapping then
+    CM.DebugPrint("Controller Look Enabled (swapped from Mouse Look)")
+    return true
+  end
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0, function()
+      if padLookActive then
+        HandleFreeLookUIState(true)
+      end
+    end)
+  else
+    HandleFreeLookUIState(true)
+  end
+  CM.ShowCrosshairLockIn()
+  CM.DebugPrint("Controller Look Enabled")
+  return false
 end
 
 -- One soft click (checkbox-on) when Mouse Look turns on / off (quick re-locks stay silent).
@@ -696,11 +739,27 @@ local function PlayFreeLookSound()
 end
 
 function CM.LockFreeLook()
-  -- The controller owns the camera while it is the active input (see IsGamepadInputActive).
-  if IsMouselooking() or CM.IsGamepadInputActive() then
+  if CM.IsGamepadInputActive() then
+    -- The pad owns the camera: lock as Controller Look (see IsGamepadInputActive).
+    if padLookActive or StartControllerLook() then
+      return
+    end
+  elseif padLookActive then
+    -- Back on mouse / keyboard while locked: swap to Mouse Look without replaying the lock-in.
+    padLookActive = false
+    if IsMouselooking() then
+      -- Someone else holds mouselook: not ours, so the lock's UI goes (as LockFreeLook would
+      -- never have shown it).
+      RunUnlockFreeLookDeferredUI()
+    else
+      StartFreeLookFresh(true)
+    end
     return
+  elseif IsMouselooking() then
+    return
+  else
+    StartFreeLookFresh()
   end
-  StartFreeLookFresh()
   PlayFreeLookSound()
   CancelPendingSheath()
   -- Returning to intentional Mouse Look (e.g. after Auto Cursor Unlock).
@@ -710,17 +769,27 @@ function CM.LockFreeLook()
 end
 
 function CM.UnlockFreeLook()
-  if not IsMouselooking() then
-    return
+  if padLookActive then
+    -- Controller Look off: the UI half of an unlock (there is no mouselook to stop or cursor
+    -- to pulse).
+    padLookActive = false
+    RunUnlockFreeLookDeferredUI()
+  else
+    if not IsMouselooking() then
+      return
+    end
+    -- With a game pad in use, never stop a mouselook Combat Mode did not start.
+    if CM.IsGamepadInputActive() and not cmMouselookActive then
+      return
+    end
+    cmMouselookActive = false
+    RunUnlockFreeLookDeferredUI()
+    MouselookStop()
+    if CM.DB.global.pulseCursor then
+      CM.ShowCursorPulse()
+    end
   end
-  cmMouselookActive = false
-  RunUnlockFreeLookDeferredUI()
-  MouselookStop()
   PlayFreeLookSound()
-
-  if CM.DB.global.pulseCursor and not CM.IsGamepadInputActive() then
-    CM.ShowCursorPulse()
-  end
 
   -- Auto Cursor Unlock / mount / pet battle / etc. sheath; hold/ground/OPie do not.
   if not ShouldKeepWeaponsDrawnOnTempUnlock() then
@@ -742,6 +811,10 @@ function CM.RematchFreeLookAfterOpieIfNeeded()
     return false
   end
   opieUnlockSeen = false
+  -- Controller Look has no cursor centering to restore; the caller's lock handles it.
+  if CM.IsGamepadInputActive() then
+    return false
+  end
 
   CM.DebugPrint("OPie ring closed — bouncing free-look rematch.")
   if IsMouselooking() then
@@ -765,7 +838,7 @@ function _G.CombatMode_CursorModeKey(keystate)
   end
 
   if keystate == "down" then
-    if not IsMouselooking() then
+    if not IsFreeLookLocked() then
       local unlockOnceActive = CM.DbBool(CM.DB.global.customConditionOnce, false)
         and CM.IsCustomConditionTrue()
       if unlockOnceActive then
@@ -794,7 +867,7 @@ function _G.CombatMode_CursorModeKey(keystate)
         CursorModeShowTime = 0 -- No spurious filter needed for lock
         ApplyWeaponsSheathed(false)
       end
-    elseif IsMouselooking() then
+    else
       -- Unlock cursor; tap vs hold is decided after the hold threshold.
       -- Use temp unlock so chrome stays until a tap is confirmed (or re-lock on hold).
       -- Once-mode: this manual unlock suppresses force-lock until the snippet is false.
@@ -856,7 +929,7 @@ end
 --   • External addon starts mouselook: cmMouselookActive=false, IsMouselooking=true → false
 --   • External addon stops CM's mouselook: cmMouselookActive=true, IsMouselooking=false → false
 function CM.IsMouselooking()
-  return cmMouselookActive and IsMouselooking()
+  return padLookActive or (cmMouselookActive and IsMouselooking())
 end
 
 --- Shoulder + vignette stay active through temp (hold) unlock; false after permanent unlock.

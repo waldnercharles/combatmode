@@ -628,12 +628,9 @@ local function Rematch()
 
   -- Early OnUpdate can start mouselook before Rematch; CursorFreelookCentering only
   -- hides the cursor across a fresh start (force 0 → Start → deferred 1). Bounce so
-  -- LockFreeLook is not a no-op when already looking. With a game pad in use the bounce is
-  -- skipped (LockFreeLook would not start again); the tick locks once mouse / keyboard is back.
-  if CM.IsGamepadInputActive() then
-    return
-  end
-  if IsMouselooking() then
+  -- LockFreeLook is not a no-op when already looking. With a game pad in use LockFreeLook makes
+  -- it Controller Look instead (no cursor centering to apply).
+  if IsMouselooking() and not CM.IsGamepadInputActive() then
     MouselookStop()
   end
   CM.LockFreeLook()
@@ -661,28 +658,17 @@ function CM.ReconcileFreeLook()
     return false
   end
 
-  -- A game pad in use owns the camera: drop only Combat Mode's own Mouse Look (never stop one
-  -- the client or another addon started) and skip the lock until mouse / keyboard is back.
-  if CM.IsGamepadInputActive() then
-    if CM.IsMouselooking() then
-      CM.UnlockFreeLook()
-    end
-    return false
-  end
-
-  local isMouselooking = IsMouselooking()
-
   if CM.ShouldFreeLookBeOff() then
     CM.UnlockFreeLook()
     return false
   end
 
   -- OPie may rematch mouselook itself after freeing CursorFreelookCentering; a plain
-  -- LockFreeLook no-ops when already looking and leaves the cursor visible.
+  -- LockFreeLook no-ops when already looking and leaves the cursor visible. Otherwise
+  -- LockFreeLook (a no-op while locked) also swaps Mouse Look and Controller Look when the
+  -- player moves between the game pad and the mouse / keyboard.
   if not (CM.RematchFreeLookAfterOpieIfNeeded and CM.RematchFreeLookAfterOpieIfNeeded()) then
-    if not isMouselooking then
-      CM.LockFreeLook()
-    end
+    CM.LockFreeLook()
   end
   return true
 end

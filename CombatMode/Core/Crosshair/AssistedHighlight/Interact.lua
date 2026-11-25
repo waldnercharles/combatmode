@@ -210,9 +210,14 @@ function Interact.GetInteractKeyText()
   if g and g.interactUnit == "target" then
     primary, alternate = INTERACT_TARGET, INTERACT_MOUSEOVER
   end
-  local key = GetBindingKey(primary) or GetBindingKey(alternate)
   local Keybinds = CM.AssistedHighlightKeybinds
-  if not (key and Keybinds and Keybinds.FormatKeybindText) then
+  if not (Keybinds and Keybinds.FormatKeybindText) then
+    return nil
+  end
+  -- A pad button bound to Interact shows as its glyph while the controller is in use.
+  local key = Keybinds.PickBindingKey(GetBindingKey(primary))
+    or Keybinds.PickBindingKey(GetBindingKey(alternate))
+  if not key then
     return nil
   end
   return Keybinds.FormatKeybindText(key)
