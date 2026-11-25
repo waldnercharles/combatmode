@@ -696,8 +696,9 @@ end
 
 --- Desired shoulder, or nil to stop writing (DynamicCam owns the CVar).
 local function DesiredShoulderOffset()
-  -- SteadyCam frames the character on foot and on every mount: never write.
-  if CM.SteadyCam then
+  -- SteadyCam frames the character on foot and on every mount, and ControllerForever's camera
+  -- views set the shoulder themselves on every device swap: never write.
+  if CM.SteadyCam or CM.ControllerForever then
     return nil
   end
   -- Protection clears CM-owned shoulder; with DynamicCam, stop writing entirely.

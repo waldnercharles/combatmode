@@ -25,6 +25,8 @@ SLASH_COMBATMODE2
 
 # Another addon's API, read only when that addon is loaded.
 SteadyCamAPI
+# ControllerForever's global table: its pointer hand-off state (Menu.pointer.active) frees the cursor.
+ControllerForever
 
 # Engine functions no Blizzard Lua happens to call; confirmed with the wow-api MCP.
 GetActionText

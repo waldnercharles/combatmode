@@ -6,7 +6,7 @@
 --  speed dip → Start → Stop → centering 0 → Start), tooltip hide while locked
 --  (Show Tooltips With key peeks it beside the crosshair), optional sheath-with-mouselook (intentional toggle only), and the OPie rematch
 --  latch (NotifyOpieUnlockFrameVisible / RematchFreeLookAfterOpieIfNeeded). Controller
---  handoff: no Mouse Look while a game pad is in use (CM.IsGamepadInputActive).
+--  Look: a lock with no MouselookStart while a game pad is in use (CM.IsGamepadInputActive).
 --  Architecture / how it works:
 --    • LockFreeLook / UnlockFreeLook drive MouselookStart/Stop + crosshair display +
 --      centering helpers via CVarManager.
@@ -581,6 +581,7 @@ function CM.ShouldFreeLookBeOff()
     end
     if
       IsGroundTargeting()
+      or CM.IsControllerForeverPointerActive()
       or InCinematic()
       or IsInCinematicScene()
       or CM.IsUnlockFrameVisible()
@@ -697,15 +698,13 @@ local function StartFreeLookFresh(skipLockIn)
 end
 
 -- Controller Look on: the same UI as a Mouse Look lock, minus MouselookStart and the cursor
--- centering bounce (the pad has no cursor to centre). From Mouse Look (the pad was picked up
--- while locked) only the mouselook itself stops; the crosshair and HUDs stay up untouched.
--- Returns true when it was a swap, so the caller skips the lock sound / sheath.
+-- centering bounce. Forever's pad camera is itself a mouselook (its gamepad freelook: the game
+-- reports IsMouselooking), so a swap from Mouse Look (the pad picked up while locked) only hands
+-- that mouselook over: never MouselookStop here, which would free the pad's pointer. The
+-- crosshair and HUDs stay up untouched. Returns true when it was a swap (no sound / sheath).
 local function StartControllerLook()
   local swapping = cmMouselookActive and IsMouselooking()
-  if swapping then
-    cmMouselookActive = false
-    MouselookStop()
-  end
+  cmMouselookActive = false
   padLookActive = true
   if swapping then
     CM.DebugPrint("Controller Look Enabled (swapped from Mouse Look)")
@@ -746,14 +745,14 @@ function CM.LockFreeLook()
     end
   elseif padLookActive then
     -- Back on mouse / keyboard while locked: swap to Mouse Look without replaying the lock-in.
+    -- The pad's freelook may still hold mouselook (Forever hands the pointer back only once
+    -- the pad has been quiet a moment): bounce it like Rematch, so the lock is ours and the
+    -- cursor centering applies.
     padLookActive = false
     if IsMouselooking() then
-      -- Someone else holds mouselook: not ours, so the lock's UI goes (as LockFreeLook would
-      -- never have shown it).
-      RunUnlockFreeLookDeferredUI()
-    else
-      StartFreeLookFresh(true)
+      MouselookStop()
     end
+    StartFreeLookFresh(true)
     return
   elseif IsMouselooking() then
     return
